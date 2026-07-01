@@ -1,0 +1,580 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finding #002 — Unrestricted Ownership Takeover | 247 Audit Doctor</title>
+  <style>
+    /* ── Tokens ── */
+    :root {
+      --bg:          #0d0f14;
+      --surface:     #13161e;
+      --border:      #1e2330;
+      --accent:      #e05c3a;          /* critical red-orange */
+      --accent-dim:  rgba(224,92,58,.12);
+      --gold:        #c9993a;          /* severity badge */
+      --green:       #3aad7a;          /* fixed code */
+      --text:        #d4d8e2;
+      --muted:       #6b7385;
+      --code-bg:     #0a0c11;
+      --font-mono:   'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-body:   'Inter', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ── */
+    .page {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 32px 80px;
+    }
+
+    /* ── Header ── */
+    .header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 32px;
+      margin-bottom: 40px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .brand span {
+      color: var(--accent);
+    }
+
+    .report-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .finding-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .finding-title {
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: #eceef3;
+      margin-bottom: 20px;
+      letter-spacing: -.01em;
+    }
+
+    .contract-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      padding: 3px 10px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .tag.contract { color: #8ab4f8; border-color: rgba(138,180,248,.25); }
+    .tag.source   { color: var(--muted); }
+
+    /* ── Severity Banner ── */
+    .severity-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 20px 24px;
+    }
+
+    .severity-pill {
+      flex-shrink: 0;
+      background: var(--accent);
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 3px;
+      margin-top: 2px;
+    }
+
+    .severity-text {
+      font-size: 14px;
+      color: #c8ccd8;
+      line-height: 1.6;
+    }
+
+    /* ── Sections ── */
+    .section {
+      margin-bottom: 44px;
+    }
+
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-label::after {
+      content: '';
+      display: block;
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .prose p {
+      color: #b8bcc8;
+      margin-bottom: 14px;
+    }
+
+    .prose p:last-child { margin-bottom: 0; }
+
+    /* ── Code blocks ── */
+    .code-wrap {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .code-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 8px 16px;
+      background: #111318;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .code-label.vuln  { color: var(--accent); }
+    .code-label.fixed { color: var(--green); }
+
+    pre {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.65;
+      padding: 20px 24px;
+      overflow-x: auto;
+      color: #c9d1e0;
+      tab-size: 4;
+    }
+
+    .cm  { color: var(--muted); font-style: italic; }          /* comment */
+    .kw  { color: #bb88f5; }                                   /* keyword */
+    .fn  { color: #7cb9f5; }                                   /* function */
+    .ty  { color: #5fc8a8; }                                   /* type */
+    .st  { color: #e5a96a; }                                   /* string */
+    .nb  { color: #e07b7b; }                                   /* bad marker */
+    .ng  { color: var(--green); }                              /* good marker */
+
+    /* ── Impact list ── */
+    .impact-list {
+      list-style: none;
+      margin-top: 14px;
+    }
+
+    .impact-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      color: #b8bcc8;
+      font-size: 14px;
+    }
+
+    .impact-list li:last-child { border-bottom: none; }
+
+    .impact-list li::before {
+      content: '▸';
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .real-world-ref {
+      margin-top: 20px;
+      background: rgba(201,153,58,.08);
+      border-left: 3px solid var(--gold);
+      border-radius: 0 4px 4px 0;
+      padding: 14px 18px;
+      font-size: 13.5px;
+      color: #c8c0a8;
+    }
+
+    .real-world-ref strong {
+      color: var(--gold);
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    /* ── PoC steps ── */
+    .poc-steps {
+      counter-reset: poc;
+      list-style: none;
+      margin-top: 4px;
+    }
+
+    .poc-steps li {
+      counter-increment: poc;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      color: #b8bcc8;
+      font-size: 14px;
+    }
+
+    .poc-steps li:last-child { border-bottom: none; }
+
+    .poc-steps li::before {
+      content: counter(poc);
+      flex-shrink: 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: 3px;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+
+    .poc-call {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: #e07b7b;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 2px 8px;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    .poc-note {
+      margin-top: 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+      display: flex;
+      gap: 16px;
+    }
+
+    .poc-note span { color: var(--accent); }
+
+    /* ── Recommendation callout ── */
+    .rec-note {
+      background: rgba(58,173,122,.07);
+      border-left: 3px solid var(--green);
+      border-radius: 0 4px 4px 0;
+      padding: 14px 18px;
+      font-size: 13.5px;
+      color: #a8c8b8;
+      margin-top: 24px;
+    }
+
+    .rec-note strong {
+      color: var(--green);
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 60px;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-brand {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .footer-brand span { color: var(--accent); }
+
+    .footer-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 600px) {
+      .page { padding: 28px 18px 60px; }
+      .finding-title { font-size: 20px; }
+      .severity-banner { flex-direction: column; gap: 12px; }
+      .brand-row { flex-direction: column; align-items: flex-start; }
+      .report-meta { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="brand-row">
+      <div class="brand"><span>247</span> Audit Doctor</div>
+      <div class="report-meta">
+        Educational Audit Report<br>
+        29 June 2026
+      </div>
+    </div>
+
+    <div class="finding-id">Security Audit Finding #002</div>
+
+    <h1 class="finding-title">
+      Unrestricted Ownership Takeover via<br>Missing Access Control on <code style="font-size:.85em;color:#7cb9f5;">setOwner()</code>
+    </h1>
+
+    <div class="contract-row">
+      <span class="tag contract">AdminVault.sol</span>
+      <span class="tag source">Custom training example</span>
+      <span class="tag source">Educational Audit Exercise</span>
+    </div>
+
+    <!-- Severity -->
+    <div class="severity-banner">
+      <div class="severity-pill">Critical</div>
+      <div class="severity-text">
+        Zero preconditions to exploit — any externally owned account can call
+        <code style="font-family:var(--font-mono);font-size:12px;">setOwner()</code>
+        directly, assume full administrative control, and drain all held funds in a
+        single transaction. Complete contract compromise. No special access, tools,
+        or timing required.
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Description ── -->
+  <section class="section">
+    <div class="section-label">Description</div>
+    <div class="prose">
+      <p>
+        The <code style="font-family:var(--font-mono);font-size:12.5px;color:#7cb9f5;">AdminVault</code>
+        contract implements an owner-based access control pattern: only the designated owner address may call
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#7cb9f5;">withdraw()</code>
+        and recover held funds. That restriction is correctly applied. However, the function responsible for
+        updating the owner address —
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#e07b7b;">setOwner()</code>
+        — carries no corresponding restriction. It is declared <code style="font-family:var(--font-mono);font-size:12.5px;">public</code>
+        with no modifier, no <code style="font-family:var(--font-mono);font-size:12.5px;">require()</code> guard,
+        and no validation of <code style="font-family:var(--font-mono);font-size:12.5px;">msg.sender</code>.
+      </p>
+      <p>
+        This creates a critical asymmetry: the contract protects the action (withdrawal) but leaves the
+        gate to that action (ownership assignment) entirely unguarded. Any caller — including anonymous
+        attackers — can invoke <code style="font-family:var(--font-mono);font-size:12.5px;color:#e07b7b;">setOwner()</code>
+        with their own address as the argument, silently overwriting the legitimate owner and acquiring
+        full administrative rights.
+      </p>
+      <p>
+        The vulnerability is a textbook example of privilege escalation through missing access control —
+        one of the most consistently exploited classes in deployed smart contracts. It is directly analogous
+        to a safe that locks its door but leaves the combination-change mechanism accessible to anyone
+        who walks past.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Vulnerable Code ── -->
+  <section class="section">
+    <div class="section-label">Vulnerable Code</div>
+    <div class="code-wrap">
+      <div class="code-label vuln">AdminVault.sol — setOwner() (vulnerable)</div>
+      <pre><span class="cm">// ❌ No access control — any caller can invoke this function</span>
+<span class="cm">// ❌ No require(msg.sender == owner) check</span>
+<span class="cm">// ❌ No onlyOwner modifier</span>
+<span class="kw">function</span> <span class="fn">setOwner</span>(<span class="ty">address</span> _newOwner) <span class="kw">public</span> {
+    owner = _newOwner; <span class="cm">// ownership silently transferred to any caller</span>
+}</pre>
+    </div>
+  </section>
+
+  <!-- ── Impact ── -->
+  <section class="section">
+    <div class="section-label">Impact</div>
+    <div class="prose">
+      <p>A successful exploit grants the attacker complete ownership of the contract. From that position, the attacker can:</p>
+    </div>
+    <ul class="impact-list">
+      <li>Call <code style="font-family:var(--font-mono);font-size:12px;">withdraw()</code> to drain the contract's entire ETH balance to their own address</li>
+      <li>Permanently lock the original deployer out of all owner-gated functions</li>
+      <li>In proxy-pattern contracts: upgrade logic, brick implementation, or redirect all funds</li>
+      <li>In token contracts: mint arbitrary supply, freeze transfers, or burn legitimate balances</li>
+      <li>Modify any critical protocol parameters now protected by the <code style="font-family:var(--font-mono);font-size:12px;">onlyOwner</code> pattern</li>
+    </ul>
+
+    <div class="real-world-ref">
+      <strong>Real-World Precedent — Parity Wallet (November 2017)</strong>
+      The Parity multi-sig wallet library contained an uninitialised
+      <code style="font-family:var(--font-mono);font-size:12px;">initWallet()</code> function — an analogous missing access control flaw.
+      An attacker claimed ownership of the unprotected library contract, then accidentally triggered
+      <code style="font-family:var(--font-mono);font-size:12px;">selfdestruct()</code>, permanently freezing over
+      <strong style="color:#c9993a;">£150M+ worth of ETH</strong> across hundreds of dependent multi-sig wallets.
+      Funds remain inaccessible to this day. The root cause: a privileged state-changing function with no
+      caller restriction.
+    </div>
+  </section>
+
+  <!-- ── Proof of Concept ── -->
+  <section class="section">
+    <div class="section-label">Proof of Concept</div>
+    <div class="prose">
+      <p style="font-size:13.5px;color:var(--muted);">No special tooling, flash loans, or privileged access required. Attack is executable in a single transaction.</p>
+    </div>
+    <ol class="poc-steps">
+      <li>Attacker identifies the deployed <code style="font-family:var(--font-mono);font-size:12px;">AdminVault</code> contract on-chain and inspects its public ABI or verified source code.</li>
+      <li>Attacker observes that <code style="font-family:var(--font-mono);font-size:12px;color:#e07b7b;">setOwner()</code> is externally callable with no modifier or <code style="font-family:var(--font-mono);font-size:12px;">require()</code> guard.</li>
+      <li>
+        Attacker calls:<br>
+        <span class="poc-call">AdminVault.setOwner(attacker_address)</span>
+      </li>
+      <li>The contract executes without reversion. The <code style="font-family:var(--font-mono);font-size:12px;">owner</code> state variable is overwritten with the attacker's address.</li>
+      <li>The original deployer is now permanently locked out. All <code style="font-family:var(--font-mono);font-size:12px;">require(msg.sender == owner)</code> checks will fail for them.</li>
+      <li>
+        Attacker calls <code style="font-family:var(--font-mono);font-size:12px;color:#e07b7b;">withdraw()</code> — which now passes the ownership check — and transfers the contract's full ETH balance to their wallet.
+      </li>
+    </ol>
+    <div class="poc-note">
+      <span>Cost to attacker:</span> gas fees only &nbsp;|&nbsp;
+      <span>Time to exploit:</span> one block
+    </div>
+  </section>
+
+  <!-- ── Recommendation ── -->
+  <section class="section">
+    <div class="section-label">Recommendation</div>
+    <div class="prose">
+      <p>
+        Restrict <code style="font-family:var(--font-mono);font-size:12.5px;">setOwner()</code> to the current owner only.
+        Implement an <code style="font-family:var(--font-mono);font-size:12.5px;">onlyOwner</code> modifier and apply it to all privileged
+        state-changing functions. Additionally, guard against the zero address being set as owner —
+        a mistake that would permanently and irreversibly brick access.
+      </p>
+    </div>
+
+    <div class="code-wrap" style="margin-top:18px;">
+      <div class="code-label vuln">Before — Vulnerable</div>
+      <pre><span class="kw">function</span> <span class="fn">setOwner</span>(<span class="ty">address</span> _newOwner) <span class="kw">public</span> {
+    <span class="cm">// ❌ No access control</span>
+    owner = _newOwner;
+}</pre>
+    </div>
+
+    <div class="code-wrap" style="margin-top:12px;">
+      <div class="code-label fixed">After — Fixed</div>
+      <pre><span class="cm">// ✅ Modifier restricts access to current owner only</span>
+<span class="kw">modifier</span> <span class="fn">onlyOwner</span>() {
+    <span class="kw">require</span>(msg.sender == owner, <span class="st">"AdminVault: caller is not the owner"</span>);
+    _;
+}
+
+<span class="cm">// ✅ onlyOwner applied — ✅ zero-address guard added</span>
+<span class="kw">function</span> <span class="fn">setOwner</span>(<span class="ty">address</span> _newOwner) <span class="kw">public</span> <span class="fn">onlyOwner</span> {
+    <span class="kw">require</span>(_newOwner != <span class="ty">address</span>(0), <span class="st">"AdminVault: new owner is zero address"</span>);
+    owner = _newOwner;
+}</pre>
+    </div>
+
+    <div class="rec-note">
+      <strong>Production Note</strong>
+      Consider emitting an <code style="font-family:var(--font-mono);font-size:12px;">OwnershipTransferred</code> event on every ownership change,
+      enabling off-chain monitoring tools to alert on unexpected privilege transfers.
+      For non-educational deployments, <strong>OpenZeppelin's <code style="font-family:var(--font-mono);font-size:12px;">Ownable</code></strong>
+      contract provides a battle-tested, audited implementation of this exact pattern and is the recommended choice.
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer class="footer">
+    <div class="footer-brand"><span>247</span> Audit Doctor</div>
+    <div class="footer-meta">
+      Finding #002 of ongoing portfolio series<br>
+      Auditor: Edwyn — 247 Audit Doctor (UK)<br>
+      Format: Secureum Audit Findings 101
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
