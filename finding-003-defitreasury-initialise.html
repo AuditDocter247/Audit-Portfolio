@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finding #003 — Unprotected Initialiser Front-Running | 247 Audit Doctor</title>
+  <style>
+    /* ── Tokens ── */
+    :root {
+      --bg:          #0d0f14;
+      --surface:     #13161e;
+      --border:      #1e2330;
+      --accent:      #e05c3a;          /* critical red-orange */
+      --accent-dim:  rgba(224,92,58,.12);
+      --gold:        #c9993a;          /* severity badge */
+      --green:       #3aad7a;          /* fixed code */
+      --text:        #d4d8e2;
+      --muted:       #6b7385;
+      --code-bg:     #0a0c11;
+      --font-mono:   'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-body:   'Inter', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 32px 80px;
+    }
+
+    .header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 32px;
+      margin-bottom: 40px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .brand span { color: var(--accent); }
+
+    .report-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .finding-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .finding-title {
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.25;
+      color: #eceef3;
+      margin-bottom: 20px;
+      letter-spacing: -.01em;
+    }
+
+    .contract-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .08em;
+      padding: 3px 10px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .tag.contract { color: #8ab4f8; border-color: rgba(138,180,248,.25); }
+    .tag.source   { color: var(--muted); }
+
+    .severity-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 20px 24px;
+    }
+
+    .severity-pill {
+      flex-shrink: 0;
+      background: var(--accent);
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 3px;
+      margin-top: 2px;
+    }
+
+    .severity-text {
+      font-size: 14px;
+      color: #c8ccd8;
+      line-height: 1.6;
+    }
+
+    .section { margin-bottom: 44px; }
+
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-label::after {
+      content: '';
+      display: block;
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .prose p { color: #b8bcc8; margin-bottom: 14px; }
+    .prose p:last-child { margin-bottom: 0; }
+
+    .code-wrap {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .code-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 8px 16px;
+      background: #111318;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .code-label.vuln  { color: var(--accent); }
+    .code-label.fixed { color: var(--green); }
+
+    pre {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.65;
+      padding: 20px 24px;
+      overflow-x: auto;
+      color: #c9d1e0;
+      tab-size: 4;
+    }
+
+    .cm  { color: var(--muted); font-style: italic; }
+    .kw  { color: #bb88f5; }
+    .fn  { color: #7cb9f5; }
+    .ty  { color: #5fc8a8; }
+    .st  { color: #e5a96a; }
+    .nb  { color: #e07b7b; }
+    .ng  { color: var(--green); }
+
+    .impact-list { list-style: none; margin-top: 14px; }
+
+    .impact-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      color: #b8bcc8;
+      font-size: 14px;
+    }
+
+    .impact-list li:last-child { border-bottom: none; }
+
+    .impact-list li::before {
+      content: '▸';
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .real-world-ref {
+      margin-top: 20px;
+      background: rgba(201,153,58,.08);
+      border-left: 3px solid var(--gold);
+      border-radius: 0 4px 4px 0;
+      padding: 14px 18px;
+      font-size: 13.5px;
+      color: #c8c0a8;
+    }
+
+    .real-world-ref strong {
+      color: var(--gold);
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .poc-steps { counter-reset: poc; list-style: none; margin-top: 4px; }
+
+    .poc-steps li {
+      counter-increment: poc;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      color: #b8bcc8;
+      font-size: 14px;
+    }
+
+    .poc-steps li:last-child { border-bottom: none; }
+
+    .poc-steps li::before {
+      content: counter(poc);
+      flex-shrink: 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: 3px;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+
+    .poc-call {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: #e07b7b;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 2px 8px;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    .poc-note {
+      margin-top: 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .poc-note span { color: var(--accent); }
+
+    .rec-note {
+      background: rgba(58,173,122,.07);
+      border-left: 3px solid var(--green);
+      border-radius: 0 4px 4px 0;
+      padding: 14px 18px;
+      font-size: 13.5px;
+      color: #a8c8b8;
+      margin-top: 24px;
+    }
+
+    .rec-note strong {
+      color: var(--green);
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .footer {
+      margin-top: 60px;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-brand {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .footer-brand span { color: var(--accent); }
+
+    .footer-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 600px) {
+      .page { padding: 28px 18px 60px; }
+      .finding-title { font-size: 20px; }
+      .severity-banner { flex-direction: column; gap: 12px; }
+      .brand-row { flex-direction: column; align-items: flex-start; }
+      .report-meta { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <header class="header">
+    <div class="brand-row">
+      <div class="brand"><span>247</span> Audit Doctor</div>
+      <div class="report-meta">
+        Educational Audit Report<br>
+        05 July 2026
+      </div>
+    </div>
+
+    <div class="finding-id">Security Audit Finding #003</div>
+
+    <h1 class="finding-title">
+      Unprotected Initialiser Front-Running Leading to<br>Ownership Hijack on <code style="font-size:.85em;color:#7cb9f5;">initialise()</code>
+    </h1>
+
+    <div class="contract-row">
+      <span class="tag contract">DeFiTreasury.sol</span>
+      <span class="tag source">Proxy Pattern Contract</span>
+      <span class="tag source">Custom training example</span>
+      <span class="tag source">Educational Audit Exercise</span>
+    </div>
+
+    <div class="severity-banner">
+      <div class="severity-pill">Critical</div>
+      <div class="severity-text">
+        The contract uses a proxy-style initialiser instead of a constructor, but
+        <code style="font-family:var(--font-mono);font-size:12px;">initialise()</code>
+        carries no restriction on who may call it. The first caller — legitimate deployer
+        or attacker — becomes owner. An attacker monitoring the public mempool can front-run
+        the deployer's own initialisation transaction, seize ownership, and drain all funds
+        subsequently deposited into the treasury.
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Description ── -->
+  <section class="section">
+    <div class="section-label">Description</div>
+    <div class="prose">
+      <p>
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#7cb9f5;">DeFiTreasury</code>
+        follows a proxy-pattern architecture. Because proxy contracts cannot rely on a normal
+        Solidity constructor (constructors don't run in the context of a proxy's storage), state
+        such as the owner address is instead set via a separate
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#e07b7b;">initialise()</code>
+        function, intended to be called once, immediately after deployment.
+      </p>
+      <p>
+        The function does include a re-entrancy-style guard against being called <em>twice</em> —
+        an <code style="font-family:var(--font-mono);font-size:12.5px;">initialised</code> boolean
+        flips to <code style="font-family:var(--font-mono);font-size:12.5px;">true</code> on first
+        use and blocks any subsequent call. However, it applies <strong>no restriction on who</strong>
+        may be the one to make that first call. There is no
+        <code style="font-family:var(--font-mono);font-size:12.5px;">require(msg.sender == deployer)</code>
+        check, no constructor-set deployer address to compare against, and no atomic
+        deploy-and-initialise step.
+      </p>
+      <p>
+        This turns initialisation into a public race condition. Deployment and initialisation
+        happen as two separate, sequential transactions — and both sit briefly in the public
+        mempool before confirming. Anyone watching the mempool can see a freshly deployed,
+        not-yet-initialised <code style="font-family:var(--font-mono);font-size:12.5px;">DeFiTreasury</code>
+        instance and submit their own <code style="font-family:var(--font-mono);font-size:12.5px;color:#e07b7b;">initialise()</code>
+        call with a higher gas price to confirm first — regardless of whether they have ever
+        interacted with the contract before.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Vulnerable Code ── -->
+  <section class="section">
+    <div class="section-label">Vulnerable Code</div>
+    <div class="code-wrap">
+      <div class="code-label vuln">DeFiTreasury.sol — initialise() (vulnerable)</div>
+      <pre><span class="kw">contract</span> <span class="fn">DeFiTreasury</span> {
+    <span class="ty">address</span> <span class="kw">public</span> owner;
+    <span class="ty">bool</span>    <span class="kw">public</span> initialised;
+    <span class="kw">mapping</span>(<span class="ty">address</span> => <span class="ty">uint256</span>) <span class="kw">public</span> balances;
+
+    <span class="cm">// ❌ Guards against re-initialisation only</span>
+    <span class="cm">// ❌ No check on WHO is allowed to call this first</span>
+    <span class="cm">// ❌ No constructor-pinned deployer address to compare against</span>
+    <span class="kw">function</span> <span class="fn">initialise</span>(<span class="ty">address</span> _owner) <span class="kw">public</span> {
+        <span class="kw">require</span>(!initialised, <span class="st">"DeFiTreasury: already initialised"</span>);
+        initialised = <span class="kw">true</span>;
+        owner = _owner; <span class="cm">// first caller wins — attacker can pass their own address</span>
+    }
+
+    <span class="kw">function</span> <span class="fn">withdraw</span>(<span class="ty">uint256</span> amount) <span class="kw">public</span> {
+        <span class="kw">require</span>(msg.sender == owner, <span class="st">"DeFiTreasury: not owner"</span>);
+        payable(msg.sender).transfer(amount);
+    }
+}</pre>
+    </div>
+  </section>
+
+  <!-- ── Impact ── -->
+  <section class="section">
+    <div class="section-label">Impact</div>
+    <div class="prose">
+      <p>Whoever wins the initialisation race becomes the permanent owner. An attacker who wins can:</p>
+    </div>
+    <ul class="impact-list">
+      <li>Set themselves as <code style="font-family:var(--font-mono);font-size:12px;">owner</code> before the legitimate deployer's transaction confirms</li>
+      <li>Call <code style="font-family:var(--font-mono);font-size:12px;">withdraw()</code> to drain any funds subsequently deposited by users who trust the contract address</li>
+      <li>Permanently lock the real deployer out — the guard against re-initialisation now works <em>against</em> the legitimate team</li>
+      <li>In real deployments, redirect upgrade logic or brick the proxy implementation entirely</li>
+      <li>Cause reputational and financial damage before the project has even launched publicly</li>
+    </ul>
+
+    <div class="real-world-ref">
+      <strong>Real-World Precedent — Audius Governance Takeover (July 2022)</strong>
+      An attacker exploited a contract in the Audius protocol that had been deployed but not yet
+      properly configured, using it to gain control over governance and mint an estimated
+      <strong style="color:#c9993a;">18 million AUDIO tokens</strong> — reported at the time as
+      roughly <strong style="color:#c9993a;">£4.9M</strong> in value. As with
+      <code style="font-family:var(--font-mono);font-size:12px;">DeFiTreasury</code>, the root cause
+      was a privileged setup function left reachable by an unintended caller during the gap between
+      deployment and proper configuration.
+    </div>
+  </section>
+
+  <!-- ── Proof of Concept ── -->
+  <section class="section">
+    <div class="section-label">Proof of Concept</div>
+    <div class="prose">
+      <p style="font-size:13.5px;color:var(--muted);">No special privileges required — only a mempool-monitoring bot and a willingness to pay a higher gas fee than the deployer.</p>
+    </div>
+    <ol class="poc-steps">
+      <li>Deployer deploys the <code style="font-family:var(--font-mono);font-size:12px;">DeFiTreasury</code> proxy. At this point <code style="font-family:var(--font-mono);font-size:12px;">owner</code> is unset and <code style="font-family:var(--font-mono);font-size:12px;">initialised</code> is <code style="font-family:var(--font-mono);font-size:12px;">false</code>.</li>
+      <li>Deployer broadcasts a follow-up transaction calling <code style="font-family:var(--font-mono);font-size:12px;">initialise(deployerAddress)</code>. It enters the public mempool and waits to be mined.</li>
+      <li>Attacker's bot detects the pending, not-yet-confirmed deployment and spots the uninitialised contract.</li>
+      <li>
+        Attacker submits their own call with a higher gas price to be prioritised:<br>
+        <span class="poc-call">DeFiTreasury.initialise(attacker_address)</span>
+      </li>
+      <li>Attacker's transaction confirms first. <code style="font-family:var(--font-mono);font-size:12px;">initialised</code> flips to <code style="font-family:var(--font-mono);font-size:12px;">true</code>; <code style="font-family:var(--font-mono);font-size:12px;">owner</code> is set to the attacker's address.</li>
+      <li>The deployer's original transaction now reverts with <code style="font-family:var(--font-mono);font-size:12px;">"already initialised"</code> — they are permanently locked out.</li>
+      <li>Users, unaware anything is wrong, deposit funds into what they believe is the legitimate treasury.</li>
+      <li>Attacker calls <code style="font-family:var(--font-mono);font-size:12px;color:#e07b7b;">withdraw()</code> — which now passes the ownership check — and drains the deposited funds.</li>
+    </ol>
+    <div class="poc-note">
+      <span>Cost to attacker:</span> gas fees only, plus a modest gas premium to win the race &nbsp;|&nbsp;
+      <span>Time to exploit:</span> one block
+    </div>
+  </section>
+
+  <!-- ── Recommendation ── -->
+  <section class="section">
+    <div class="section-label">Recommendation</div>
+    <div class="prose">
+      <p>
+        Never leave a window where a deployed-but-uninitialised contract is publicly callable.
+        Two complementary fixes close this gap:
+      </p>
+    </div>
+
+    <div class="code-wrap" style="margin-top:18px;">
+      <div class="code-label vuln">Before — Vulnerable</div>
+      <pre><span class="kw">function</span> <span class="fn">initialise</span>(<span class="ty">address</span> _owner) <span class="kw">public</span> {
+    <span class="kw">require</span>(!initialised, <span class="st">"DeFiTreasury: already initialised"</span>);
+    initialised = <span class="kw">true</span>;
+    owner = _owner; <span class="cm">// ❌ anyone can be the "first" caller</span>
+}</pre>
+    </div>
+
+    <div class="code-wrap" style="margin-top:12px;">
+      <div class="code-label fixed">After — Fixed</div>
+      <pre><span class="cm">// ✅ Option 1: use OpenZeppelin's Initializable + deploy-and-init in one atomic transaction</span>
+<span class="cm">// via a factory contract, removing the public window entirely</span>
+<span class="kw">import</span> <span class="st">"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol"</span>;
+
+<span class="kw">contract</span> <span class="fn">DeFiTreasury</span> <span class="kw">is</span> <span class="ty">Initializable</span> {
+    <span class="ty">address</span> <span class="kw">public</span> owner;
+
+    <span class="cm">// ✅ Deployer address pinned at factory-deploy time, compared on call</span>
+    <span class="kw">function</span> <span class="fn">initialise</span>(<span class="ty">address</span> _owner, <span class="ty">address</span> _expectedDeployer) <span class="kw">public</span> <span class="fn">initializer</span> {
+        <span class="kw">require</span>(msg.sender == _expectedDeployer, <span class="st">"DeFiTreasury: unauthorised initialiser"</span>);
+        owner = _owner;
+    }
+}</pre>
+    </div>
+
+    <div class="rec-note">
+      <strong>Production Note</strong>
+      The most robust fix is architectural: deploy and initialise in the <em>same transaction</em>
+      using a factory contract, so there is never a block in which the proxy exists in an
+      uninitialised, publicly callable state. OpenZeppelin's
+      <code style="font-family:var(--font-mono);font-size:12px;">Initializable</code> modifier
+      (paired with this factory pattern) is the industry-standard approach and is directly
+      relevant here, as it was already flagged as a reference pattern earlier in this training programme.
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer class="footer">
+    <div class="footer-brand"><span>247</span> Audit Doctor</div>
+    <div class="footer-meta">
+      Finding #003 of ongoing portfolio series<br>
+      Auditor: Edwyn — 247 Audit Doctor (UK)<br>
+      Format: Secureum Audit Findings 101
+    </div>
+  </footer>
+
+</div>
+</body>
+</html
