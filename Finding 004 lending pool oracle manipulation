@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finding #004 — Oracle Manipulation via Spot Price | 247 Audit Doctor</title>
+  <style>
+    :root {
+      --bg:          #0d0f14;
+      --surface:     #13161e;
+      --border:      #1e2330;
+      --accent:      #e05c3a;
+      --accent-dim:  rgba(224,92,58,.12);
+      --gold:        #c9993a;
+      --green:       #3aad7a;
+      --text:        #d4d8e2;
+      --muted:       #6b7385;
+      --code-bg:     #0a0c11;
+      --font-mono:   'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-body:   'Inter', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    .page { max-width: 860px; margin: 0 auto; padding: 48px 32px 80px; }
+
+    .header { border-bottom: 1px solid var(--border); padding-bottom: 32px; margin-bottom: 40px; }
+
+    .brand-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+    }
+
+    .brand {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .brand span { color: var(--accent); }
+
+    .report-meta {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--muted); text-align: right;
+    }
+
+    .finding-id {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .15em;
+      color: var(--muted); text-transform: uppercase; margin-bottom: 12px;
+    }
+
+    .finding-title {
+      font-size: 26px; font-weight: 700; line-height: 1.25; color: #eceef3;
+      margin-bottom: 20px; letter-spacing: -.01em;
+    }
+
+    .contract-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+
+    .tag {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em;
+      padding: 3px 10px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted);
+    }
+    .tag.contract { color: #8ab4f8; border-color: rgba(138,180,248,.25); }
+    .tag.source   { color: var(--muted); }
+
+    .severity-banner {
+      display: flex; align-items: flex-start; gap: 20px;
+      background: var(--accent-dim); border: 1px solid var(--accent);
+      border-radius: 6px; padding: 20px 24px;
+    }
+
+    .severity-pill {
+      flex-shrink: 0; background: var(--accent); color: #fff;
+      font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+      letter-spacing: .15em; text-transform: uppercase; padding: 5px 14px;
+      border-radius: 3px; margin-top: 2px;
+    }
+
+    .severity-text { font-size: 14px; color: #c8ccd8; line-height: 1.6; }
+
+    .section { margin-bottom: 44px; }
+
+    .section-label {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .2em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-label::after { content: ''; display: block; flex: 1; height: 1px; background: var(--border); }
+
+    .prose p { color: #b8bcc8; margin-bottom: 14px; }
+    .prose p:last-child { margin-bottom: 0; }
+
+    .code-wrap {
+      background: var(--code-bg); border: 1px solid var(--border);
+      border-radius: 6px; overflow: hidden; margin-top: 4px;
+    }
+
+    .code-label {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+      text-transform: uppercase; padding: 8px 16px; background: #111318;
+      border-bottom: 1px solid var(--border); color: var(--muted);
+    }
+    .code-label.vuln  { color: var(--accent); }
+    .code-label.fixed { color: var(--green); }
+
+    pre {
+      font-family: var(--font-mono); font-size: 13px; line-height: 1.65;
+      padding: 20px 24px; overflow-x: auto; color: #c9d1e0; tab-size: 4;
+    }
+
+    .cm { color: var(--muted); font-style: italic; }
+    .kw { color: #bb88f5; }
+    .fn { color: #7cb9f5; }
+    .ty { color: #5fc8a8; }
+    .st { color: #e5a96a; }
+    .nb { color: #e07b7b; }
+    .ng { color: var(--green); }
+
+    .impact-list { list-style: none; margin-top: 14px; }
+    .impact-list li {
+      display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid var(--border); color: #b8bcc8; font-size: 14px;
+    }
+    .impact-list li:last-child { border-bottom: none; }
+    .impact-list li::before { content: '▸'; color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+
+    .real-world-ref {
+      margin-top: 20px; background: rgba(201,153,58,.08); border-left: 3px solid var(--gold);
+      border-radius: 0 4px 4px 0; padding: 14px 18px; font-size: 13.5px; color: #c8c0a8;
+    }
+    .real-world-ref strong {
+      color: var(--gold); display: block; font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: .12em; text-transform: uppercase; margin-bottom: 6px;
+    }
+
+    .poc-steps { counter-reset: poc; list-style: none; margin-top: 4px; }
+    .poc-steps li {
+      counter-increment: poc; display: flex; align-items: flex-start; gap: 16px;
+      padding: 12px 0; border-bottom: 1px solid var(--border); color: #b8bcc8; font-size: 14px;
+    }
+    .poc-steps li:last-child { border-bottom: none; }
+    .poc-steps li::before {
+      content: counter(poc); flex-shrink: 0; font-family: var(--font-mono); font-size: 11px;
+      font-weight: 700; color: var(--accent); background: var(--accent-dim);
+      border: 1px solid var(--accent); border-radius: 3px; width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    }
+
+    .poc-call {
+      font-family: var(--font-mono); font-size: 12.5px; color: #e07b7b;
+      background: var(--code-bg); border: 1px solid var(--border); border-radius: 3px;
+      padding: 2px 8px; display: inline-block; margin-top: 4px;
+    }
+
+    .poc-note {
+      margin-top: 16px; font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+      border-top: 1px solid var(--border); padding-top: 14px; display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .poc-note span { color: var(--accent); }
+
+    .rec-note {
+      background: rgba(58,173,122,.07); border-left: 3px solid var(--green);
+      border-radius: 0 4px 4px 0; padding: 14px 18px; font-size: 13.5px; color: #a8c8b8; margin-top: 24px;
+    }
+    .rec-note strong {
+      color: var(--green); display: block; font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: .12em; text-transform: uppercase; margin-bottom: 6px;
+    }
+
+    .footer {
+      margin-top: 60px; padding-top: 28px; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;
+    }
+    .footer-brand {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .15em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .footer-brand span { color: var(--accent); }
+    .footer-meta {
+      font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+      text-align: right; line-height: 1.8;
+    }
+
+    @media (max-width: 600px) {
+      .page { padding: 28px 18px 60px; }
+      .finding-title { font-size: 20px; }
+      .severity-banner { flex-direction: column; gap: 12px; }
+      .brand-row { flex-direction: column; align-items: flex-start; }
+      .report-meta { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <header class="header">
+    <div class="brand-row">
+      <div class="brand"><span>247</span> Audit Doctor</div>
+      <div class="report-meta">
+        Educational Audit Report<br>
+        09 July 2026
+      </div>
+    </div>
+
+    <div class="finding-id">Security Audit Finding #004</div>
+
+    <h1 class="finding-title">
+      Collateral Under-Pricing via Single-Pool<br>Spot Price Oracle Manipulation
+    </h1>
+
+    <div class="contract-row">
+      <span class="tag contract">LendingPool.sol</span>
+      <span class="tag source">Custom training example</span>
+      <span class="tag source">Educational Audit Exercise</span>
+    </div>
+
+    <div class="severity-banner">
+      <div class="severity-pill">Critical</div>
+      <div class="severity-text">
+        The lending pool determines collateral value by reading a single DEX pool's live
+        token reserves. A flash-loan-funded attacker can distort that pool's price within
+        a single transaction, causing the protocol to massively over-value deposited
+        collateral, then borrow far more than that collateral could legitimately support —
+        leaving the protocol with unrecoverable bad debt.
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Description ── -->
+  <section class="section">
+    <div class="section-label">Description</div>
+    <div class="prose">
+      <p>
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#7cb9f5;">LendingPool</code>
+        allows users to deposit ETH as collateral and borrow USDC against it. To determine
+        how much a user's ETH collateral is worth, the contract calls
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#e07b7b;">getPrice()</code>,
+        which reads the live token reserves of a single Uniswap-style ETH/USDC liquidity pool
+        and derives price directly from that ratio.
+      </p>
+      <p>
+        This is a <strong>spot price</strong> — it reflects only what is currently sitting in
+        one pool, at this exact moment, with no resistance to short-term manipulation. AMM pool
+        ratios shift with every trade; a sufficiently large trade shifts the ratio sharply, even
+        if only for the duration of a single transaction.
+      </p>
+      <p>
+        Because Solidity transactions are atomic and flash loans allow borrowing large sums with
+        no upfront capital — repayable within the same transaction — an attacker can temporarily
+        distort the pool's reported price, exploit that distortion against
+        <code style="font-family:var(--font-mono);font-size:12.5px;">LendingPool</code>,
+        and repay the flash loan before the transaction ends, walking away with the difference
+        as profit at the protocol's expense.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Vulnerable Code ── -->
+  <section class="section">
+    <div class="section-label">Vulnerable Code</div>
+    <div class="code-wrap">
+      <div class="code-label vuln">LendingPool.sol — getPrice() and depositCollateral() (vulnerable)</div>
+      <pre><span class="kw">contract</span> <span class="fn">LendingPool</span> {
+    <span class="ty">IUniswapPool</span> <span class="kw">public</span> <span class="kw">immutable</span> priceSource;
+    <span class="kw">mapping</span>(<span class="ty">address</span> => <span class="ty">uint256</span>) <span class="kw">public</span> collateralValue;
+    <span class="kw">mapping</span>(<span class="ty">address</span> => <span class="ty">uint256</span>) <span class="kw">public</span> borrowed;
+
+    <span class="cm">// ❌ Reads live reserves from a single pool — no time-weighting, no external check</span>
+    <span class="kw">function</span> <span class="fn">getPrice</span>() <span class="kw">public</span> <span class="kw">view</span> <span class="kw">returns</span> (<span class="ty">uint256</span>) {
+        (<span class="ty">uint256</span> ethReserve, <span class="ty">uint256</span> usdcReserve) = priceSource.getReserves();
+        <span class="kw">return</span> (usdcReserve * 1e18) / ethReserve; <span class="cm">// spot price, manipulable within one tx</span>
+    }
+
+    <span class="cm">// ❌ Collateral value calculated using the manipulable spot price above</span>
+    <span class="kw">function</span> <span class="fn">depositCollateral</span>() <span class="kw">external</span> <span class="kw">payable</span> {
+        <span class="ty">uint256</span> price = getPrice();
+        collateralValue[msg.sender] += msg.value * price / 1e18;
+    }
+
+    <span class="kw">function</span> <span class="fn">borrow</span>(<span class="ty">uint256</span> _amount) <span class="kw">external</span> {
+        <span class="kw">require</span>(borrowed[msg.sender] + _amount <= collateralValue[msg.sender] * 80 / 100,
+            <span class="st">"Exceeds LTV"</span>);
+        borrowed[msg.sender] += _amount;
+        USDC.transfer(msg.sender, _amount);
+    }
+}</pre>
+    </div>
+  </section>
+
+  <!-- ── Impact ── -->
+  <section class="section">
+    <div class="section-label">Impact</div>
+    <div class="prose">
+      <p>An attacker exploiting this flaw can, within a single transaction:</p>
+    </div>
+    <ul class="impact-list">
+      <li>Artificially inflate the reported price of ETH by dumping a flash-loaned amount of USDC into the pool</li>
+      <li>Deposit a small amount of real ETH as collateral while the price is distorted, causing <code style="font-family:var(--font-mono);font-size:12px;">collateralValue</code> to be recorded far above the ETH's real worth</li>
+      <li>Borrow USDC up to 80% of that inflated, false collateral value — far more than the real ETH deposited should support</li>
+      <li>Repay the flash loan and keep the excess borrowed USDC as profit</li>
+      <li>Leave <code style="font-family:var(--font-mono);font-size:12px;">LendingPool</code> under-collateralized, with genuine bad debt that legitimate depositors ultimately absorb</li>
+    </ul>
+
+    <div class="real-world-ref">
+      <strong>Real-World Precedent — Multiple Flash Loan Oracle Attacks (2020–2022)</strong>
+      This exact pattern — flash-loan-funded manipulation of a single DEX pool used as a price
+      source — has been responsible for tens of millions of pounds in losses across DeFi lending
+      protocols, including well-documented incidents such as the bZx (February 2020) and Cheese
+      Bank (November 2020) exploits. In each case, the root cause was the same architectural
+      flaw: trusting a manipulable, single-source spot price for high-stakes financial logic.
+    </div>
+  </section>
+
+  <!-- ── Proof of Concept ── -->
+  <section class="section">
+    <div class="section-label">Proof of Concept</div>
+    <div class="prose">
+      <p style="font-size:13.5px;color:var(--muted);">Executable entirely within one transaction; no persistent capital required beyond gas.</p>
+    </div>
+    <ol class="poc-steps">
+      <li>Attacker takes out a large flash loan of USDC, repayable within the same transaction.</li>
+      <li>Attacker swaps that USDC into the Uniswap ETH/USDC pool used by <code style="font-family:var(--font-mono);font-size:12px;">priceSource</code>, sharply reducing the pool's ETH reserve relative to USDC and inflating the reported ETH price.</li>
+      <li>
+        Attacker calls:<br>
+        <span class="poc-call">LendingPool.depositCollateral{value: 1 ether}()</span><br>
+        recording a <code style="font-family:var(--font-mono);font-size:12px;">collateralValue</code> based on the now-inflated price.
+      </li>
+      <li>
+        Attacker calls:<br>
+        <span class="poc-call">LendingPool.borrow(inflatedAmount)</span><br>
+        withdrawing USDC far exceeding the real value of the 1 ETH deposited.
+      </li>
+      <li>Attacker swaps back through the pool (or a separate route) to restore its balance and repay the original flash loan.</li>
+      <li>Transaction completes; attacker keeps the excess borrowed USDC as profit. <code style="font-family:var(--font-mono);font-size:12px;">LendingPool</code> is left holding bad debt against the now-undervalued real collateral.</li>
+    </ol>
+    <div class="poc-note">
+      <span>Cost to attacker:</span> gas fees + flash loan fee (typically ~0.05–0.09%) &nbsp;|&nbsp;
+      <span>Time to exploit:</span> one transaction
+    </div>
+  </section>
+
+  <!-- ── Recommendation ── -->
+  <section class="section">
+    <div class="section-label">Recommendation</div>
+    <div class="prose">
+      <p>
+        Never use a single pool's live spot price for high-stakes valuation logic. Two
+        established mitigations:
+      </p>
+    </div>
+
+    <div class="code-wrap" style="margin-top:18px;">
+      <div class="code-label vuln">Before — Vulnerable</div>
+      <pre><span class="kw">function</span> <span class="fn">getPrice</span>() <span class="kw">public</span> <span class="kw">view</span> <span class="kw">returns</span> (<span class="ty">uint256</span>) {
+    (<span class="ty">uint256</span> ethReserve, <span class="ty">uint256</span> usdcReserve) = priceSource.getReserves();
+    <span class="kw">return</span> (usdcReserve * 1e18) / ethReserve; <span class="cm">// ❌ manipulable within one tx</span>
+}</pre>
+    </div>
+
+    <div class="code-wrap" style="margin-top:12px;">
+      <div class="code-label fixed">After — Fixed (Chainlink price feed)</div>
+      <pre><span class="ty">AggregatorV3Interface</span> <span class="kw">public</span> <span class="kw">immutable</span> priceFeed;
+
+<span class="cm">// ✅ Chainlink aggregates across many sources over time — not manipulable in one tx</span>
+<span class="kw">function</span> <span class="fn">getPrice</span>() <span class="kw">public</span> <span class="kw">view</span> <span class="kw">returns</span> (<span class="ty">uint256</span>) {
+    (, <span class="ty">int256</span> price, , <span class="ty">uint256</span> updatedAt, ) = priceFeed.latestRoundData();
+    <span class="kw">require</span>(price > 0 && block.timestamp - updatedAt < 1 hours, <span class="st">"Stale or invalid price"</span>);
+    <span class="kw">return</span> uint256(price);
+}</pre>
+    </div>
+
+    <div class="rec-note">
+      <strong>Alternative — TWAP</strong>
+      Where a Chainlink feed isn't available for a given asset pair, a Time-Weighted Average
+      Price sampled over a sufficiently long window (e.g. 30+ minutes) is a reasonable
+      alternative — a single-transaction flash loan cannot meaningfully shift an average
+      calculated over that timeframe. Whichever approach is chosen, price data should always
+      include a staleness check before being trusted for financial logic.
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer class="footer">
+    <div class="footer-brand"><span>247</span> Audit Doctor</div>
+    <div class="footer-meta">
+      Finding #004 of ongoing portfolio series<br>
+      Auditor: Edwyn — 247 Audit Doctor (UK)<br>
+      Format: Secureum Audit Findings 101
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
