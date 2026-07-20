@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finding #005 — Denial of Service via Push-Payment Loop | 247 Audit Doctor</title>
+  <style>
+    :root {
+      --bg:          #0d0f14;
+      --surface:     #13161e;
+      --border:      #1e2330;
+      --accent:      #d98324;          /* amber — High severity, distinct from Critical red */
+      --accent-dim:  rgba(217,131,36,.12);
+      --gold:        #c9993a;
+      --green:       #3aad7a;
+      --text:        #d4d8e2;
+      --muted:       #6b7385;
+      --code-bg:     #0a0c11;
+      --font-mono:   'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-body:   'Inter', 'Segoe UI', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    .page { max-width: 860px; margin: 0 auto; padding: 48px 32px 80px; }
+
+    .header { border-bottom: 1px solid var(--border); padding-bottom: 32px; margin-bottom: 40px; }
+
+    .brand-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px; flex-wrap: wrap; gap: 12px;
+    }
+
+    .brand {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .brand span { color: var(--accent); }
+
+    .report-meta {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--muted); text-align: right;
+    }
+
+    .finding-id {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .15em;
+      color: var(--muted); text-transform: uppercase; margin-bottom: 12px;
+    }
+
+    .finding-title {
+      font-size: 26px; font-weight: 700; line-height: 1.25; color: #eceef3;
+      margin-bottom: 20px; letter-spacing: -.01em;
+    }
+
+    .contract-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+
+    .tag {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em;
+      padding: 3px 10px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted);
+    }
+    .tag.contract { color: #8ab4f8; border-color: rgba(138,180,248,.25); }
+    .tag.source   { color: var(--muted); }
+
+    .severity-banner {
+      display: flex; align-items: flex-start; gap: 20px;
+      background: var(--accent-dim); border: 1px solid var(--accent);
+      border-radius: 6px; padding: 20px 24px;
+    }
+
+    .severity-pill {
+      flex-shrink: 0; background: var(--accent); color: #1a0f02;
+      font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+      letter-spacing: .15em; text-transform: uppercase; padding: 5px 14px;
+      border-radius: 3px; margin-top: 2px;
+    }
+
+    .severity-text { font-size: 14px; color: #c8ccd8; line-height: 1.6; }
+
+    .section { margin-bottom: 44px; }
+
+    .section-label {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .2em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-label::after { content: ''; display: block; flex: 1; height: 1px; background: var(--border); }
+
+    .prose p { color: #b8bcc8; margin-bottom: 14px; }
+    .prose p:last-child { margin-bottom: 0; }
+
+    .code-wrap {
+      background: var(--code-bg); border: 1px solid var(--border);
+      border-radius: 6px; overflow: hidden; margin-top: 4px;
+    }
+
+    .code-label {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em;
+      text-transform: uppercase; padding: 8px 16px; background: #111318;
+      border-bottom: 1px solid var(--border); color: var(--muted);
+    }
+    .code-label.vuln  { color: var(--accent); }
+    .code-label.fixed { color: var(--green); }
+
+    pre {
+      font-family: var(--font-mono); font-size: 13px; line-height: 1.65;
+      padding: 20px 24px; overflow-x: auto; color: #c9d1e0; tab-size: 4;
+    }
+
+    .cm { color: var(--muted); font-style: italic; }
+    .kw { color: #bb88f5; }
+    .fn { color: #7cb9f5; }
+    .ty { color: #5fc8a8; }
+    .st { color: #e5a96a; }
+
+    .impact-list { list-style: none; margin-top: 14px; }
+    .impact-list li {
+      display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid var(--border); color: #b8bcc8; font-size: 14px;
+    }
+    .impact-list li:last-child { border-bottom: none; }
+    .impact-list li::before { content: '▸'; color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+
+    .real-world-ref {
+      margin-top: 20px; background: rgba(201,153,58,.08); border-left: 3px solid var(--gold);
+      border-radius: 0 4px 4px 0; padding: 14px 18px; font-size: 13.5px; color: #c8c0a8;
+    }
+    .real-world-ref strong {
+      color: var(--gold); display: block; font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: .12em; text-transform: uppercase; margin-bottom: 6px;
+    }
+
+    .poc-steps { counter-reset: poc; list-style: none; margin-top: 4px; }
+    .poc-steps li {
+      counter-increment: poc; display: flex; align-items: flex-start; gap: 16px;
+      padding: 12px 0; border-bottom: 1px solid var(--border); color: #b8bcc8; font-size: 14px;
+    }
+    .poc-steps li:last-child { border-bottom: none; }
+    .poc-steps li::before {
+      content: counter(poc); flex-shrink: 0; font-family: var(--font-mono); font-size: 11px;
+      font-weight: 700; color: var(--accent); background: var(--accent-dim);
+      border: 1px solid var(--accent); border-radius: 3px; width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    }
+
+    .poc-call {
+      font-family: var(--font-mono); font-size: 12.5px; color: #e0a05c;
+      background: var(--code-bg); border: 1px solid var(--border); border-radius: 3px;
+      padding: 2px 8px; display: inline-block; margin-top: 4px;
+    }
+
+    .poc-note {
+      margin-top: 16px; font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+      border-top: 1px solid var(--border); padding-top: 14px; display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .poc-note span { color: var(--accent); }
+
+    .rec-note {
+      background: rgba(58,173,122,.07); border-left: 3px solid var(--green);
+      border-radius: 0 4px 4px 0; padding: 14px 18px; font-size: 13.5px; color: #a8c8b8; margin-top: 24px;
+    }
+    .rec-note strong {
+      color: var(--green); display: block; font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: .12em; text-transform: uppercase; margin-bottom: 6px;
+    }
+
+    .sev-note {
+      background: rgba(107,115,133,.08); border-left: 3px solid var(--muted);
+      border-radius: 0 4px 4px 0; padding: 14px 18px; font-size: 13.5px; color: #a8adba; margin-top: 20px;
+    }
+    .sev-note strong {
+      color: #c8ccd8; display: block; font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: .12em; text-transform: uppercase; margin-bottom: 6px;
+    }
+
+    .footer {
+      margin-top: 60px; padding-top: 28px; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;
+    }
+    .footer-brand {
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: .15em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .footer-brand span { color: var(--accent); }
+    .footer-meta {
+      font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+      text-align: right; line-height: 1.8;
+    }
+
+    @media (max-width: 600px) {
+      .page { padding: 28px 18px 60px; }
+      .finding-title { font-size: 20px; }
+      .severity-banner { flex-direction: column; gap: 12px; }
+      .brand-row { flex-direction: column; align-items: flex-start; }
+      .report-meta { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <header class="header">
+    <div class="brand-row">
+      <div class="brand"><span>247</span> Audit Doctor</div>
+      <div class="report-meta">
+        Educational Audit Report<br>
+        19 July 2026
+      </div>
+    </div>
+
+    <div class="finding-id">Security Audit Finding #005</div>
+
+    <h1 class="finding-title">
+      Permanent Denial of Service via<br>Push-Payment Refund Loop
+    </h1>
+
+    <div class="contract-row">
+      <span class="tag contract">InvestmentPool.sol</span>
+      <span class="tag source">Custom training example</span>
+      <span class="tag source">Educational Audit Exercise</span>
+    </div>
+
+    <div class="severity-banner">
+      <div class="severity-pill">High</div>
+      <div class="severity-text">
+        The contract refunds investors by iterating an array and pushing ETH to each address.
+        A single participant using a contract address that rejects incoming ETH causes the
+        entire loop to revert on every attempt — permanently freezing all investor funds.
+        No attacker profit is possible, but every legitimate depositor loses access to their
+        principal irrecoverably.
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Description ── -->
+  <section class="section">
+    <div class="section-label">Description</div>
+    <div class="prose">
+      <p>
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#7cb9f5;">InvestmentPool</code>
+        maintains an array of investor addresses and refunds them via a single
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#e0a05c;">refundAll()</code>
+        function that loops over that array, pushing each investor's deposit to their address
+        using <code style="font-family:var(--font-mono);font-size:12.5px;">transfer()</code>.
+      </p>
+      <p>
+        Solidity transactions are <strong>atomic</strong>: if any single statement reverts, the
+        entire transaction unwinds — including every operation that had already succeeded earlier
+        in the same call. A loop that performs external transfers therefore has as many points of
+        failure as it has entries.
+      </p>
+      <p>
+        An attacker exploits this without any privileged access and without ever calling the
+        vulnerable function themselves. They simply participate as an ordinary investor using a
+        <strong>contract address engineered to reject ETH</strong> — one with no
+        <code style="font-family:var(--font-mono);font-size:12.5px;">receive()</code> or
+        <code style="font-family:var(--font-mono);font-size:12.5px;">fallback()</code> function, or
+        one whose fallback deliberately reverts. From that moment, their address sits in the array
+        as a permanent landmine.
+      </p>
+      <p>
+        Every subsequent call to
+        <code style="font-family:var(--font-mono);font-size:12.5px;color:#e0a05c;">refundAll()</code>
+        proceeds normally until it reaches the malicious address, at which point the
+        <code style="font-family:var(--font-mono);font-size:12.5px;">transfer()</code> fails, the
+        revert propagates, and the whole refund — for every investor — is rolled back. The attacker
+        is entirely passive; the contract breaks itself against their address.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Vulnerable Code ── -->
+  <section class="section">
+    <div class="section-label">Vulnerable Code</div>
+    <div class="code-wrap">
+      <div class="code-label vuln">InvestmentPool.sol — refundAll() (vulnerable)</div>
+      <pre><span class="kw">contract</span> <span class="fn">InvestmentPool</span> {
+    <span class="ty">address</span>[] <span class="kw">public</span> investors;
+    <span class="kw">mapping</span>(<span class="ty">address</span> => <span class="ty">uint256</span>) <span class="kw">public</span> deposits;
+
+    <span class="kw">function</span> <span class="fn">deposit</span>() <span class="kw">external</span> <span class="kw">payable</span> {
+        <span class="kw">if</span> (deposits[msg.sender] == 0) investors.push(msg.sender);
+        deposits[msg.sender] += msg.value;
+    }
+
+    <span class="cm">// ❌ Loops over external addresses performing transfers</span>
+    <span class="cm">// ❌ One rejecting address reverts the entire call, for everyone</span>
+    <span class="kw">function</span> <span class="fn">refundAll</span>() <span class="kw">external</span> <span class="fn">onlyOwner</span> {
+        <span class="kw">for</span> (<span class="ty">uint</span> i = 0; i &lt; investors.length; i++) {
+            payable(investors[i]).transfer(deposits[investors[i]]);
+            deposits[investors[i]] = 0;
+        }
+    }
+}
+
+<span class="cm">// The attacker's participating contract — note the absence of receive()/fallback()</span>
+<span class="kw">contract</span> <span class="fn">RejectingInvestor</span> {
+    <span class="kw">function</span> <span class="fn">joinPool</span>(<span class="ty">address</span> pool) <span class="kw">external</span> <span class="kw">payable</span> {
+        InvestmentPool(pool).deposit{value: msg.value}();
+    }
+    <span class="cm">// ❌ No receive() and no fallback() — all incoming ETH reverts</span>
+}</pre>
+    </div>
+  </section>
+
+  <!-- ── Impact ── -->
+  <section class="section">
+    <div class="section-label">Impact</div>
+    <div class="prose">
+      <p>Once a single rejecting address is present in the investor array:</p>
+    </div>
+    <ul class="impact-list">
+      <li><code style="font-family:var(--font-mono);font-size:12px;">refundAll()</code> reverts on every call and can never complete</li>
+      <li>All investor principal remains locked in the contract with no alternative withdrawal path</li>
+      <li>The freeze is <strong>permanent</strong> — the contract is immutable and the malicious entry cannot be removed</li>
+      <li>Investors who joined in good faith lose 100% of their deposited funds</li>
+      <li>The attacker gains nothing and also loses their own deposit — this is a pure griefing attack</li>
+    </ul>
+
+    <div class="real-world-ref">
+      <strong>Real-World Precedent — GovernMental (2016)</strong>
+      The GovernMental Ponzi contract accumulated a creditor list so large that paying it out
+      exceeded the block gas limit, permanently stranding roughly <strong style="color:#c9993a;">1,100 ETH</strong>.
+      Different trigger — unbounded array growth rather than a rejecting recipient — but the same
+      structural flaw: a single loop over external payouts became an all-or-nothing operation
+      that could no longer complete, freezing every participant's funds at once.
+    </div>
+
+    <div class="sev-note">
+      <strong>Severity Rationale — Why High, Not Critical</strong>
+      No funds are stolen and the attacker derives no profit — indeed they sacrifice their own
+      deposit to execute it. That absence of attacker gain is why this is not rated Critical.
+      However, the loss to legitimate users is total and irreversible: every depositor's principal
+      is permanently unrecoverable, and the protocol's core function is permanently disabled.
+      Permanent, protocol-wide fund freezing places this firmly at High.
+    </div>
+  </section>
+
+  <!-- ── Proof of Concept ── -->
+  <section class="section">
+    <div class="section-label">Proof of Concept</div>
+    <div class="prose">
+      <p style="font-size:13.5px;color:var(--muted);">Requires no privileged access. The attacker never calls the vulnerable function.</p>
+    </div>
+    <ol class="poc-steps">
+      <li>Attacker deploys <code style="font-family:var(--font-mono);font-size:12px;">RejectingInvestor</code> — a contract with no <code style="font-family:var(--font-mono);font-size:12px;">receive()</code> or <code style="font-family:var(--font-mono);font-size:12px;">fallback()</code> function, so any incoming ETH transfer reverts.</li>
+      <li>
+        Attacker deposits into the pool through that contract:<br>
+        <span class="poc-call">RejectingInvestor.joinPool{value: 1 ether}(poolAddress)</span><br>
+        Their contract address is now appended to <code style="font-family:var(--font-mono);font-size:12px;">investors[]</code>.
+      </li>
+      <li>Legitimate investors continue depositing normally, unaware of the planted entry.</li>
+      <li>The owner eventually calls <code style="font-family:var(--font-mono);font-size:12px;color:#e0a05c;">refundAll()</code> to return funds.</li>
+      <li>The loop refunds investors successfully until it reaches the attacker's address, where <code style="font-family:var(--font-mono);font-size:12px;">transfer()</code> reverts.</li>
+      <li>Atomicity rolls back the entire transaction — including all refunds already paid within that call. No investor receives anything.</li>
+      <li>Every retry produces the identical result. With no alternative withdrawal function, all deposits are frozen permanently.</li>
+    </ol>
+    <div class="poc-note">
+      <span>Cost to attacker:</span> deployment gas + their own forfeited deposit &nbsp;|&nbsp;
+      <span>Attacker profit:</span> none — pure griefing
+    </div>
+  </section>
+
+  <!-- ── Recommendation ── -->
+  <section class="section">
+    <div class="section-label">Recommendation</div>
+    <div class="prose">
+      <p>
+        Replace the push-payment loop with a <strong>pull-payment</strong> pattern: rather than the
+        contract distributing funds to every investor in one transaction, each investor withdraws
+        their own balance individually. This removes the shared point of failure entirely — a
+        rejecting contract can then only ever break its own withdrawal.
+      </p>
+    </div>
+
+    <div class="code-wrap" style="margin-top:18px;">
+      <div class="code-label vuln">Before — Vulnerable (push)</div>
+      <pre><span class="kw">function</span> <span class="fn">refundAll</span>() <span class="kw">external</span> <span class="fn">onlyOwner</span> {
+    <span class="kw">for</span> (<span class="ty">uint</span> i = 0; i &lt; investors.length; i++) {
+        payable(investors[i]).transfer(deposits[investors[i]]); <span class="cm">// ❌ shared failure point</span>
+        deposits[investors[i]] = 0;
+    }
+}</pre>
+    </div>
+
+    <div class="code-wrap" style="margin-top:12px;">
+      <div class="code-label fixed">After — Fixed (pull)</div>
+      <pre><span class="cm">// ✅ Each investor withdraws independently — no loop, no shared failure point</span>
+<span class="cm">// ✅ Checks-Effects-Interactions: state cleared before the external call</span>
+<span class="kw">function</span> <span class="fn">withdrawRefund</span>() <span class="kw">external</span> {
+    <span class="ty">uint256</span> amount = deposits[msg.sender];
+    <span class="kw">require</span>(amount > 0, <span class="st">"Nothing to withdraw"</span>);
+
+    deposits[msg.sender] = 0;
+
+    (<span class="ty">bool</span> success, ) = payable(msg.sender).call{value: amount}(<span class="st">""</span>);
+    <span class="kw">require</span>(success, <span class="st">"Transfer failed"</span>);
+}</pre>
+    </div>
+
+    <div class="rec-note">
+      <strong>General Principle</strong>
+      Never loop over an array of external addresses performing transfers or calls. Any single
+      uncooperative entry holds the entire operation hostage, and on an immutable contract that
+      hostage situation is permanent. Let recipients pull their own funds. Note also the switch
+      from <code style="font-family:var(--font-mono);font-size:12px;">transfer()</code> to
+      <code style="font-family:var(--font-mono);font-size:12px;">call{value:}</code> in the fix:
+      <code style="font-family:var(--font-mono);font-size:12px;">transfer()</code>'s fixed 2300-gas
+      stipend can fail against legitimate smart-contract wallets, so
+      <code style="font-family:var(--font-mono);font-size:12px;">call</code> with an explicit
+      success check — combined with state updated beforehand — is the safer modern pattern.
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer class="footer">
+    <div class="footer-brand"><span>247</span> Audit Doctor</div>
+    <div class="footer-meta">
+      Finding #005 of ongoing portfolio series<br>
+      Auditor: Edwyn — 247 Audit Doctor (UK)<br>
+      Format: Secureum Audit Findings 101
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
